@@ -1,0 +1,15 @@
+--Training data--
+Total Samples: 2006
+Malicious URLs: 934
+Non-malicious URLs: 1072
+
+--f1 score on validation set--
+Logistic Regression: 1.000000
+Support Vector Machine: 1.000000
+Random Forest: 1.000000
+
+--Classify data--
+Total Samples: 2024
+Malicious URL: 993
+Non-malicious URL: 1031
+

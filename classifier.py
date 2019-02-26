@@ -11,9 +11,10 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.metrics.classification import f1_score, confusion_matrix
 
 
-# load the dataset
 def get_alexa_rank_level(s):
-    'Return a alex rank level based on alexa rank'
+    """
+    Return the rank level based on alexa rank
+    """
     if s is not None:
         if int(s) <= 5000:
             return 1
@@ -33,7 +34,9 @@ def get_alexa_rank_level(s):
 
 
 def is_top_alexa(s):
-    'check if alexa rank is within top 1,000,000'
+    """
+    Check if alexa rank is less or equal 1,000,000
+    """
     if s is not None:
         if int(s) <= 1000000:
             return 1
@@ -42,7 +45,9 @@ def is_top_alexa(s):
 
 
 def model_tune_params(model, params, X, Y):
-    'tune a machine learning model'
+    """
+    Tune a machine learning model an array of arrays of parameters
+    """
     new_model = GridSearchCV(
         estimator=model,
         param_grid=params,
@@ -50,7 +55,6 @@ def model_tune_params(model, params, X, Y):
         n_jobs=-1,
     )
     new_model.fit(X, Y)
-    print(new_model, '\n')
     return new_model
 
 
@@ -66,11 +70,6 @@ def plot_confusion_matrix(cm,
     """
     if normalize:
         cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-        print("Normalized confusion matrix")
-    else:
-        print('Confusion matrix, without normalization')
-
-    print(cm)
 
     plt.imshow(cm, interpolation='nearest', cmap=cmap)
     plt.title(title)
@@ -95,19 +94,25 @@ def plot_confusion_matrix(cm,
 
 
 def main():
+    """
+    main function that train machine learning models to classify
+    malicious URL
+    """
     corpus = open('data/train.json')
     urldata = json.load(corpus, encoding="latin1")
     X_table = []
     X_header = [
-        "url", "host_length", "url_length", "domain_age", "domain_token_count",
+        "host_length", "url_length", "domain_age", "domain_token_count",
         "path_length", "path_token_count", "is_top_alexa", "alexa_rank_level"
     ]
-    Y_header = ["malicious"]
     Y = []
+    Y_header = ["malicious_url"]
 
+    logs = open("logs.txt", "w+")
+    count_malicious_train = 0
+    total_train = 0
     for row in urldata:
         data_row = []
-        data_row.append(row["url"])
         data_row.append(int(row["host_len"]))
         data_row.append(int(row["url_len"]))
         data_row.append(int(row["domain_age_days"]))
@@ -119,24 +124,27 @@ def main():
 
         X_table.append(data_row)
         Y.append(row["malicious_url"])
+        total_train = total_train + 1
+        if (row["malicious_url"] == 1):
+            count_malicious_train = count_malicious_train + 1
+
+    logs.write("--Training data--\n")
+    logs.write("Total Samples: %d\n" % (total_train))
+    logs.write("Malicious URLs: %d\n" % (count_malicious_train))
+    logs.write(
+        "Non-malicious URLs: %d\n" % (total_train - count_malicious_train))
+    logs.write("\n")
 
     # create a panda dataframe
     X = pd.DataFrame(X_table, columns=X_header)
     Y = pd.DataFrame(Y, columns=Y_header)
-    print X.head()
-    print Y.head()
-
-    # drop url for now
-    X_new = X.drop(['url'], axis=1)
-    print X_new.head()
 
     # split dataset into training and testing
-    X_train, X_test, Y_train, Y_test \
-        = train_test_split(X_new, Y, test_size=0.20, random_state=100, stratify=Y, shuffle=True)
+    X_train, X_test, Y_train, Y_test = train_test_split(
+        X, Y, test_size=0.20, random_state=100, stratify=Y, shuffle=True)
 
     logit = linear_model.LogisticRegression(random_state=100, dual=False)
-    linear_svm = svm.LinearSVC(random_state=100, dual=False)
-    none_linear_svm = svm.SVC(random_state=100)
+    svm_clf = svm.SVC(random_state=100)
     rf = ensemble.RandomForestClassifier(random_state=100)
 
     logit_params = {
@@ -144,12 +152,7 @@ def main():
         'penalty': ('l2', 'l1')
     }
 
-    linear_svm_params = {
-        'C': [0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000],
-        'penalty': ('l2', 'l1')
-    }
-
-    none_linear_svm_params = {
+    svm_clf_params = {
         'C': [0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000],
         'gamma': [0.001, 0.0001, 0.00001],
         'kernel': ('poly', 'rbf', 'sigmoid')
@@ -164,30 +167,24 @@ def main():
     }
 
     logit = model_tune_params(logit, logit_params, X_train, Y_train)
-    svm1 = model_tune_params(linear_svm, linear_svm_params, X_train, Y_train)
-    svm2 = model_tune_params(none_linear_svm, none_linear_svm_params, X_train,
-                             Y_train)
+    svm_clf = model_tune_params(svm_clf, svm_clf_params, X_train, Y_train)
     rf = model_tune_params(rf, rf_params, X_train, Y_train)
 
     logit_pred = logit.predict(X_test)
-    svm1_pred = svm1.predict(X_test)
-    svm2_pred = svm2.predict(X_test)
+    svm_clf_pred = svm_clf.predict(X_test)
     rf_pred = rf.predict(X_test)
 
-    # f1 score on 20% validation set
-    print("Scores after parameter tuning: ")
+    # f1 score on validation set
     logit_score = f1_score(Y_test, logit_pred)
-    svm1_score = f1_score(Y_test, svm1_pred)
-    svm2_score = f1_score(Y_test, svm2_pred)
+    svm_clf_score = f1_score(Y_test, svm_clf_pred)
     rf_score = f1_score(Y_test, rf_pred)
-    print("logistic regression f1 score: {:5f}".format(logit_score))
-    print("svm 1 f1 score: {:5f}".format(svm1_score))
-    print("svm 2 f1 score: {:5f}".format(svm2_score))
-    print("rf f1 score: {:5f}".format(rf_score))
+    logs.write("--f1 score on validation set--\n")
+    logs.write("Logistic Regression: {:5f}\n".format(logit_score))
+    logs.write("Support Vector Machine: {:5f}\n".format(svm_clf_score))
+    logs.write("Random Forest: {:5f}\n\n".format(rf_score))
 
-    # confusion matrix on 20% validation set
-    print("Confusion matrix plots")
-    classes = ["malicious", "not malicious"]
+    # confusion matrix on validation set
+    classes = ["Not Malicious", "Malicious"]
     logit_matrix = confusion_matrix(Y_test, logit_pred)
     np.set_printoptions(precision=2)
     plt.figure()
@@ -195,17 +192,12 @@ def main():
         logit_matrix, classes, normalize=False, title='logit')
     plt.savefig('images/logit.png')
 
-    svm1_matrix = confusion_matrix(Y_test, svm1_pred)
+    svm_clf_matrix = confusion_matrix(Y_test, svm_clf_pred)
     np.set_printoptions(precision=2)
     plt.figure()
-    plot_confusion_matrix(svm1_matrix, classes, normalize=False, title='svm1')
-    plt.savefig('images/svm1.png')
-
-    svm2_matrix = confusion_matrix(Y_test, svm2_pred)
-    np.set_printoptions(precision=2)
-    plt.figure()
-    plot_confusion_matrix(svm2_matrix, classes, normalize=False, title='svm2')
-    plt.savefig('images/svm2.png')
+    plot_confusion_matrix(
+        svm_clf_matrix, classes, normalize=False, title='svm')
+    plt.savefig('images/svm.png')
 
     rf_matrix = confusion_matrix(Y_test, rf_pred)
     np.set_printoptions(precision=2)
@@ -234,14 +226,33 @@ def main():
         classify_X.append(data_row)
 
     classify_X_df = pd.DataFrame(classify_X)
-    classify_pred = svm1.predict(classify_X_df)
+    classify_pred = svm_clf.predict(classify_X_df)
 
     # output the predict results to results.txt
     results = open("results.txt", "w+")
     for i in range(0, len(classify_pred)):
-        print "%s, %d" % (classify_urls[i], classify_pred[i])
+        # print "%s, %d" % (classify_urls[i], classify_pred[i])
         results.write("%s, %d\n" % (classify_urls[i], classify_pred[i]))
     results.close()
+
+    count_malicious_classify = 0
+    total_classify = 0
+    for row in classify_pred:
+        total_classify = total_classify + 1
+        if row == 1:
+            count_malicious_classify = count_malicious_classify + 1
+
+    logs.write("--Classify data--\n")
+    logs.write("Total Samples: %d\n" % (total_classify))
+    logs.write("Malicious URL: %d\n" % (count_malicious_classify))
+    logs.write("Non-malicious URL: %d\n" %
+               (total_classify - count_malicious_classify))
+    logs.write("\n")
+    logs.close()
+
+    # output the logs file to stdout
+    with open("logs.txt", 'r') as logs:
+        print logs.read()
 
 
 if __name__ == "__main__":
